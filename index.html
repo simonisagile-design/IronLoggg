@@ -28,18 +28,21 @@ button,input,textarea,select{font-family:var(--ff);}
 .app{display:contents;} /* app div does nothing — children are positioned directly */
 .screen-stack{
   position:fixed;
-  top:0;left:50%;
+  top:0;
+  left:50%;
   transform:translateX(-50%);
   width:100%;max-width:430px;
-  bottom:calc(58px + env(safe-area-inset-bottom, 0px));
+  bottom:0;
+  padding-bottom:calc(58px + env(safe-area-inset-bottom, 0px));
   background:#0d0d0d;
   overflow:hidden;
 }
 .screen{
-  position:absolute;inset:0;
+  position:absolute;
+  top:0;left:0;right:0;
+  bottom:0;
   overflow-y:auto;-webkit-overflow-scrolling:touch;
   display:flex;flex-direction:column;
-  padding-bottom:12px;
 }
 .screen.hidden{display:none!important;}
 .hidden{display:none!important;}
