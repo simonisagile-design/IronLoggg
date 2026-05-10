@@ -276,6 +276,7 @@ button,input,textarea,select{font-family:var(--ff);}
             <button class="btn btn-ghost" onclick="resetGlobal()">↺</button>
           </div>
         </div>
+        <div id="sess-timestamps" style="display:flex;gap:6px;padding:0 14px 10px;font-size:11px;"></div>
       </div>
       <div class="stats-strip">
         <div class="stat-pill"><div class="stat-n" id="st-ex">0</div><div class="stat-l">Übungen</div></div>
@@ -686,12 +687,22 @@ function renderDiary(){
   const sorted=[...sessions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   document.getElementById('session-list').innerHTML=sorted.length?sorted.map(s=>{
     const d=new Date(s.date);
-    const lines=(s.exercises||[]).map(se=>{const ex=exBy(se.exId);return`${se.sets.length}x ${ex?ex.name:'?'}`;}).join('<br>');
-    return`<div class="session-item" onclick="openSess('${s.id}')">
-      <div class="session-row">
+    const lines=(s.exercises||[]).map(se=>{const ex=exBy(se.exId);return`${(se.sets||[]).length}x ${ex?ex.name:'?'}`;}).join('<br>');
+    const startStr=s.startedAt?new Date(s.startedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'—';
+    const endStr=s.endedAt?new Date(s.endedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'—';
+    const dateStr=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});
+    return`<div class="session-item">
+      <div class="session-row" onclick="openSess('${s.id}')">
         <div class="date-badge"><div class="date-day">${DDAYS[d.getDay()]}</div><div class="date-num">${d.getDate()}</div></div>
-        <div class="sess-info"><div class="sess-name">${s.name}</div><div class="sess-exlist">${lines}</div></div>
+        <div class="sess-info">
+          <div class="sess-name">${s.name}</div>
+          <div style="font-size:11px;color:var(--teal);margin-bottom:3px;">▶ ${dateStr} ${startStr} &nbsp;|&nbsp; ■ ${endStr}</div>
+          <div class="sess-exlist">${lines}</div>
+        </div>
         <div class="sess-dur">${fdur(s.duration)}</div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;padding:6px 14px 10px;border-top:0.5px solid var(--border);">
+        <button onclick="deleteSession('${s.id}')" style="background:none;border:none;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;padding:4px 8px;">🗑 Löschen</button>
       </div>
     </div>`;
   }).join(''):`<div style="text-align:center;padding:60px 20px;color:var(--muted);font-size:14px;line-height:2;">Noch keine Trainings.<br>Tippe auf + Neues Training.</div>`;
@@ -714,7 +725,8 @@ function renderPlans(){
 
 function startFromTemplate(tplId){
   const tpl=templates.find(t=>String(t.id)===String(tplId));if(!tpl)return;
-  activeSess={id:'s'+Date.now(),date:new Date(),name:tpl.name,duration:0,exercises:(tpl.exIds||[]).map(id=>({exId:String(id),sets:[],_info:false}))};
+  const now=new Date();
+  activeSess={id:'s'+Date.now(),date:now,name:tpl.name,duration:0,startedAt:now.toISOString(),endedAt:null,exercises:(tpl.exIds||[]).map(id=>({exId:String(id),sets:[],_info:false}))};
   gSecs=0;initSession(tpl.name);
 }
 function deleteTemplate(id){templates=templates.filter(t=>String(t.id)!==String(id));saveAll();renderPlans();}
@@ -741,9 +753,16 @@ function openSess(id){
   gSecs=activeSess.duration||0;initSession(activeSess.name);
 }
 function startNew(){
-  const h=new Date().getHours(),name=h<12?"Morgentraining":h<17?"Nachmittagstraining":"Abendtraining";
-  activeSess={id:'s'+Date.now(),date:new Date(),name,duration:0,exercises:[]};
+  const now=new Date();
+  const h=now.getHours(),name=h<12?"Morgentraining":h<17?"Nachmittagstraining":"Abendtraining";
+  activeSess={id:'s'+Date.now(),date:now,name,duration:0,startedAt:now.toISOString(),endedAt:null,exercises:[]};
   gSecs=0;initSession(name);
+}
+function deleteSession(id){
+  if(!confirm('Dieses Training wirklich löschen?'))return;
+  sessions=sessions.filter(s=>String(s.id)!==String(id));
+  saveAll();renderDiary();
+  showToast('Training gelöscht');
 }
 function initSession(name){
   gRun=false;clearInterval(gInt);
@@ -751,9 +770,11 @@ function initSession(name){
   document.getElementById('global-btn').textContent='Start';document.getElementById('global-btn').style='';
   document.getElementById('sess-title').textContent=name;
   goScreen('session');renderCards();updateStats();
+  renderSessionTimestamps();
 }
 function finishSession(){
   clearInterval(gInt);gRun=false;activeSess.duration=gSecs;
+  if(!activeSess.endedAt) activeSess.endedAt=new Date().toISOString();
   const toSave=JSON.parse(JSON.stringify(activeSess));
   (toSave.exercises||[]).forEach(se=>{delete se._info;});
   const idx=sessions.findIndex(s=>String(s.id)===String(toSave.id));
@@ -1486,6 +1507,61 @@ function clearSessions(){
   saveAll();
   renderProfil();
   showToast('Trainings gelöscht');
+}
+
+/* ═══ SESSION TIMESTAMPS ═══ */
+function fDT(iso){
+  if(!iso) return '—';
+  const d=new Date(iso);
+  return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+}
+// Convert ISO to datetime-local input value
+function isoToLocal(iso){
+  if(!iso) return '';
+  const d=new Date(iso);
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderSessionTimestamps(){
+  const el=document.getElementById('sess-timestamps');
+  if(!el) return;
+  const s=activeSess;
+  const startStr=s.startedAt?fDT(s.startedAt):'Nicht gesetzt';
+  const endStr=s.endedAt?fDT(s.endedAt):'Noch offen';
+  el.innerHTML=`
+    <button onclick="editTimestamp('start')" style="flex:1;background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:6px 8px;cursor:pointer;text-align:left;">
+      <div style="font-size:9px;font-weight:700;color:var(--teal);letter-spacing:.5px;margin-bottom:2px;">▶ START</div>
+      <div style="color:#f0ede8;font-size:11px;font-weight:500;">${startStr}</div>
+    </button>
+    <button onclick="editTimestamp('end')" style="flex:1;background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:6px 8px;cursor:pointer;text-align:left;">
+      <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:2px;">■ ENDE</div>
+      <div style="color:#f0ede8;font-size:11px;font-weight:500;">${endStr}</div>
+    </button>`;
+}
+
+function editTimestamp(which){
+  const current = which==='start' ? activeSess.startedAt : activeSess.endedAt;
+  const label = which==='start' ? 'Startzeit bearbeiten' : 'Endzeit bearbeiten';
+  document.getElementById('modal-title').textContent = label;
+  const inp = document.getElementById('modal-input');
+  inp.type = 'datetime-local';
+  inp.value = isoToLocal(current || new Date().toISOString());
+  document.getElementById('modal-ok').onclick = ()=>{
+    if(!inp.value){closeModal();return;}
+    const iso = new Date(inp.value).toISOString();
+    if(which==='start'){
+      activeSess.startedAt = iso;
+      activeSess.date = new Date(iso);
+    } else {
+      activeSess.endedAt = iso;
+    }
+    inp.type = 'text'; // reset
+    closeModal();
+    renderSessionTimestamps();
+    showToast('Zeit gespeichert ✓');
+  };
+  document.getElementById('modal-bg').classList.remove('hidden');
 }
 
 /* ═══ INIT ═══ */
